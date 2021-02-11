@@ -131,6 +131,7 @@ def get_annotations(dataset_slug, anno_dest_dir='annos'):
                     os.makedirs(anno_dest_dir)
                 with ZipFile(tmp_file, 'r') as f:
                     f.extractall(anno_dest_dir)
+                anno_paths = [os.path.join(anno_dest_dir, x) for x in os.listdir(anno_dest_dir)]
     except Exception as e:
         response_delete = requests.delete(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_slug}/exports/{export_name}', headers=HEADERS)
         response_delete.raise_for_status()
@@ -141,4 +142,5 @@ def get_annotations(dataset_slug, anno_dest_dir='annos'):
     response_delete.raise_for_status()
 
     del export['download_url']
+    export['annotation_paths'] = anno_paths
     return export
