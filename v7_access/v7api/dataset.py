@@ -1,7 +1,7 @@
 import os
 import time
 from zipfile import ZipFile
-from typing import List
+from typing import List, Iterator
 
 import requests
 import numpy as np
@@ -11,6 +11,7 @@ from ..utils import mktmpdir
 
 from darwin.client import Client
 from darwin.dataset.identifier import DatasetIdentifier
+from darwin.item import DatasetItem
 
 TEAM_SLUG = 'tractableteama'
 API_KEY = '<api_key_here>'
@@ -40,7 +41,7 @@ def add_labels_to_dataset(dataset_slug, labels: List[str], type: str):
     dataset = client.get_remote_dataset(dataset_identifier=identifier)
 
     for label in labels:
-        dataset.create_annotation_class(label, 'polygon')
+        dataset.create_annotation_class(label, type)
 
 def populate_dataset_videos(dataset_id, videos: List[VideoUpload]):
     items = [dict(
@@ -144,3 +145,11 @@ def get_annotations(dataset_slug, anno_dest_dir='annos'):
     del export['download_url']
     export['annotation_paths'] = anno_paths
     return export
+
+def get_dataset_files(dataset_slug) -> Iterator[DatasetItem]:
+    client = Client.from_api_key(API_KEY)
+    identifier = DatasetIdentifier.parse(dataset_slug)
+    dataset = client.get_remote_dataset(dataset_identifier=identifier)
+    resp = dataset.fetch_remote_files()
+
+    return resp
