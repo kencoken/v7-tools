@@ -5,9 +5,16 @@ import pandas as pd
 import imageio
 from PIL import Image, ImageOps
 
+
 class S3Path(NamedTuple):
     path: str
     thumb_path: str
+
+
+class ImageUpload(NamedTuple):
+    filename: str
+    s3_path: str
+
 
 class VideoUpload(NamedTuple):
     filename: str

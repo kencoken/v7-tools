@@ -3,7 +3,6 @@ from typing import List
 
 import boto3
 from botocore.exceptions import ClientError
-import concurrent.futures
 import imagehash
 from PIL import Image
 
@@ -45,7 +44,6 @@ class LocalData:
         image_ids_local = [os.path.splitext(x)[0] for x in os.listdir(self.local_src)]
 
         return image_ids_local
-
 
     def find_non_duplicates(self, image_ids: List[str]) -> List[str]:
         """ Assumes images have been downloaded """
