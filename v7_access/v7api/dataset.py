@@ -13,6 +13,8 @@ from ..utils import mktmpdir
 from darwin.client import Client
 from darwin.dataset.identifier import DatasetIdentifier
 from darwin.item import DatasetItem
+import darwin.importer as importer
+import darwin.importer.formats
 
 TEAM_SLUG = 'tractableteama'
 API_KEY = '<api_key_here>'
@@ -95,6 +97,17 @@ def _populate_dataset(dataset_id, items):
                                 json=payload)
 
         response.raise_for_status()
+
+
+def populate_dataset_annotations(dataset_name, format_name: str, files: List[str]):
+    assert format_name in ['darwin', 'coco', 'pascal_voc']
+    client = Client.from_api_key(API_KEY)
+    identifier = DatasetIdentifier.parse(dataset_name)
+    dataset = client.get_remote_dataset(dataset_identifier=identifier)
+
+    format_dict = {k: v for (k, v) in darwin.importer.formats.supported_formats}
+    parser = format_dict[format_name]
+    importer.import_annotations(dataset, parser, files)
 
 
 def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=False, verbose=False):
