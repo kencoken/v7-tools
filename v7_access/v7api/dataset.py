@@ -24,10 +24,10 @@ HEADERS = {
 }
 
 
-def create_dataset(dataset_name):
+def create_dataset(dataset_slug):
     """ Create new empty dataset """
     client = Client.from_api_key(API_KEY)
-    identifier = DatasetIdentifier.parse(dataset_name)
+    identifier = DatasetIdentifier.parse(dataset_slug)
     dataset = client.create_dataset(name=identifier.dataset_slug)
 
     dataset_ifo = dict(
@@ -39,18 +39,18 @@ def create_dataset(dataset_name):
     return dataset_ifo
 
 
-def add_labels_to_dataset(dataset_name, labels: List[str], label_type: str):
+def add_labels_to_dataset(dataset_slug: str, labels: List[str], label_type: str):
     """ Add labels to a dataset """
     assert label_type in ['polygon', 'tag']
     client = Client.from_api_key(API_KEY)
-    identifier = DatasetIdentifier.parse(dataset_name)
+    identifier = DatasetIdentifier.parse(dataset_slug)
     dataset = client.get_remote_dataset(dataset_identifier=identifier)
 
     for label in labels:
         dataset.create_annotation_class(label, label_type)
 
 
-def populate_dataset_images(dataset_id, images: List[ImageUpload]):
+def populate_dataset_images(dataset_slug, images: List[ImageUpload]):
     """ Create a dataset with images
 
     dataset_id: dataset id for a dataset prepared previously with create_dataset()
@@ -59,12 +59,13 @@ def populate_dataset_images(dataset_id, images: List[ImageUpload]):
     items = [dict(
         type='image',
         key=image.s3_path,
+        thumbnail_key='_thumbs/' + image.s3_path,
         filename=image.filename
     ) for image in images]
-    _populate_dataset(dataset_id, items)
+    _populate_dataset(dataset_slug, items)
 
 
-def populate_dataset_videos(dataset_id, videos: List[VideoUpload]):
+def populate_dataset_videos(dataset_slug, videos: List[VideoUpload]):
     """ Create a dataset with videos
 
     dataset_id: dataset id for a dataset prepared previously with create_dataset()
@@ -83,34 +84,41 @@ def populate_dataset_videos(dataset_id, videos: List[VideoUpload]):
             height=video.height
         ) for s3_impath in video.s3_image_paths]
     ) for video in videos]
-    _populate_dataset(dataset_id, items)
+    _populate_dataset(dataset_slug, items)
 
 
-def _populate_dataset(dataset_id, items):
-    item_batches = [x.tolist() for x in np.array_split(items, 100)]
+def _populate_dataset(dataset_slug, items):
+    client = Client.from_api_key(API_KEY)
+    identifier = DatasetIdentifier.parse(dataset_slug)
+    dataset = client.get_remote_dataset(dataset_identifier=identifier)
+
+    item_batches = [x.tolist() for x in np.array_split(items, min(len(items), 100))]
     for idx, batch in enumerate(item_batches):
         print(f'Batch {idx + 1}/{len(item_batches)}')
         payload = {
             'files': batch
         }
-        response = requests.put(f'https://darwin.v7labs.com/api/datasets/{dataset_id}/external_data', headers=HEADERS,
+        print(payload)
+        print(dataset.dataset_id)
+        response = requests.put(f'https://darwin.v7labs.com/api/datasets/{dataset.dataset_id}/external_data', headers=HEADERS,
                                 json=payload)
 
         response.raise_for_status()
 
 
-def populate_dataset_annotations(dataset_name, format_name: str, files: List[str]):
+def populate_dataset_annotations(dataset_slug, format_name: str, file_paths: List[str]):
     assert format_name in ['darwin', 'coco', 'pascal_voc']
     client = Client.from_api_key(API_KEY)
-    identifier = DatasetIdentifier.parse(dataset_name)
+    identifier = DatasetIdentifier.parse(dataset_slug)
     dataset = client.get_remote_dataset(dataset_identifier=identifier)
 
     format_dict = {k: v for (k, v) in darwin.importer.formats.supported_formats}
     parser = format_dict[format_name]
-    importer.import_annotations(dataset, parser, files)
+
+    importer.import_annotations(dataset, parser, file_paths)
 
 
-def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=False, verbose=False):
+def get_annotations(dataset_slug, anno_dest_dir='annos', *, clear_directory=False, verbose=False):
     """ Get all annotations for a dataset
 
     dataset_name: name of the dataset to retrieve annotations for
@@ -119,7 +127,7 @@ def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=Fals
     verbose: log API responses
     """
     client = Client.from_api_key(API_KEY)
-    identifier = DatasetIdentifier.parse(dataset_name)
+    identifier = DatasetIdentifier.parse(dataset_slug)
     dataset = client.get_remote_dataset(dataset_identifier=identifier)
 
     filters = {'statuses': 'review,complete'}
@@ -141,7 +149,7 @@ def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=Fals
     )
 
     print('Creating export...')
-    response_create = requests.post(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_name}/exports',
+    response_create = requests.post(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_slug}/exports',
                                     headers=HEADERS,
                                     json=payload)
     response_create.raise_for_status()
@@ -152,7 +160,7 @@ def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=Fals
         waiting_for_export = True
         timeout_stop = time.time() + timeout
         while waiting_for_export:
-            response_retrieve = requests.get(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_name}/exports', headers=HEADERS)
+            response_retrieve = requests.get(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_slug}/exports', headers=HEADERS)
             if verbose:
                 pprint.pprint(['get_export', response_retrieve.json()])
             response_retrieve.raise_for_status()
@@ -196,14 +204,14 @@ def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=Fals
                     f.extractall(anno_dest_dir)
                 anno_paths = [os.path.join(anno_dest_dir, x) for x in os.listdir(anno_dest_dir)]
     except Exception as e:
-        response_delete = requests.delete(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_name}/exports/{export_name}', headers=HEADERS)
+        response_delete = requests.delete(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_slug}/exports/{export_name}', headers=HEADERS)
         response_delete.raise_for_status()
         if verbose:
             pprint.pprint(['delete_export', response_delete.status_code])
         raise e
 
     print('Export completed, cleaning up...')
-    response_delete = requests.delete(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_name}/exports/{export_name}', headers=HEADERS)
+    response_delete = requests.delete(f'https://darwin.v7labs.com/api/teams/{TEAM_SLUG}/datasets/{dataset_slug}/exports/{export_name}', headers=HEADERS)
     response_delete.raise_for_status()
 
     del export['download_url']
@@ -211,10 +219,10 @@ def get_annotations(dataset_name, anno_dest_dir='annos', *, clear_directory=Fals
     return export
 
 
-def get_dataset_files(dataset_name) -> Iterator[DatasetItem]:
+def get_dataset_files(dataset_slug) -> Iterator[DatasetItem]:
     """ Return a list of filenames in a dataset along with their status """
     client = Client.from_api_key(API_KEY)
-    identifier = DatasetIdentifier.parse(dataset_name)
+    identifier = DatasetIdentifier.parse(dataset_slug)
     dataset = client.get_remote_dataset(dataset_identifier=identifier)
     resp = dataset.fetch_remote_files()
 
